@@ -3,12 +3,12 @@ package org.lumina.routes.subroutes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import org.h2.security.auth.AuthConfigException
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -58,7 +58,7 @@ fun Routing.weixinSoterRoute(appId: String, appSecret: String) {
                 if (!isSoterPassed) throw AuthenticationException(INVALID_SOTER)
                 transaction {
                     val userRow = Users.selectAll().where { Users.weixinOpenId eq weixinOpenId }.firstOrNull()
-                        ?: throw AuthConfigException(USER_NOT_FOUND)
+                        ?: throw BadRequestException(USER_NOT_FOUND)
                     Users.update({ Users.userId eq userRow[Users.userId] }) {
                         it[isSoterEnabled] = when (request.action) {
                             SoterAction.ENABLE -> true

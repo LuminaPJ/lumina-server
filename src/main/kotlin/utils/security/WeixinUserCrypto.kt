@@ -12,6 +12,7 @@ import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import javax.security.sasl.AuthenticationException
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -83,7 +84,7 @@ private fun verifyHmac(data: ByteArray, receivedMac: ByteArray, key: SecretKey) 
     hmac.init(key)
 
     val calculatedMac = hmac.doFinal(data)
-    if (!constantTimeEquals(calculatedMac, receivedMac)) throw SecurityException("HMAC 验证失败")
+    if (!constantTimeEquals(calculatedMac, receivedMac)) throw AuthenticationException("HMAC 验证失败")
 }
 
 private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {

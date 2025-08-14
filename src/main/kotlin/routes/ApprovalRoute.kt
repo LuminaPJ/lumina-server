@@ -69,7 +69,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                     val approvalInfo = transaction {
                         val approvalRow =
                             Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                ?: throw IllegalArgumentException(INVALID_APPROVAL_ID)
+                                ?: throw BadRequestException(INVALID_APPROVAL_ID)
                         val approvalType = approvalRow[Approvals.approvalType]
                         when (approvalType) {
                             ApprovalTargetType.TASK_CREATION -> {
@@ -265,7 +265,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                         val approvalType = approvalRow[Approvals.approvalType]
                         if (actionRequest.approvalType != approvalType.toString()) throw IllegalArgumentException("用户端传递的审批类型与实际审批类型不匹配")
                         val adminUserId =
-                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw IllegalStateException("服务器错误")
+                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw IllegalStateException("服务端错误")
                         when (approvalType) {
                             ApprovalTargetType.TASK_CREATION -> {
                                 TODO()
@@ -274,7 +274,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                             ApprovalTargetType.GROUP_JOIN -> {
                                 val joinGroupApprovalRow =
                                     JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approvalId }
-                                        .firstOrNull() ?: throw IllegalStateException("服务器错误")
+                                        .firstOrNull() ?: throw IllegalStateException("服务端错误")
                                 when (actionRequest.action) {
                                     APPROVE -> {
                                         val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
@@ -291,7 +291,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                                             it[this.weixinOpenId] = requesterWeixinOpenId
                                             it[this.userName] = requesterUserName
                                         } else if (requesterUserRow[Users.userId] != requesterUserId) throw IllegalStateException(
-                                            "服务器错误"
+                                            "服务端错误"
                                         )
                                         UserGroups.insert {
                                             it[this.userId] = requesterUserId
@@ -400,7 +400,7 @@ fun Transaction.buildApprovalInfo(approvalRow: ResultRow, type: ApprovalTargetTy
 
         ApprovalTargetType.GROUP_JOIN -> {
             Approvals.selectAll().where { Approvals.approvalId eq approvalRow[JoinGroupApprovals.approvalId] }
-                .firstOrNull() ?: throw IllegalStateException("服务器错误")
+                .firstOrNull() ?: throw IllegalStateException("服务端错误")
         }
     }
     return ApprovalInfo(
@@ -423,7 +423,7 @@ fun Transaction.buildApprovalInfo(approvalRow: ResultRow, type: ApprovalTargetTy
 fun Transaction.buildJoinGroupApprovalInfo(approvalId: Long, approvalRow: ResultRow): JoinGroupApprovalInfo {
     val joinGroupApprovalRow =
         JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approvalId }.firstOrNull()
-            ?: throw IllegalStateException("服务器错误")
+            ?: throw IllegalStateException("服务端错误")
     val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
     val targetGroupName =
         Groups.selectAll().where { Groups.groupId eq targetGroupId }.firstOrNull()?.get(Groups.groupName)

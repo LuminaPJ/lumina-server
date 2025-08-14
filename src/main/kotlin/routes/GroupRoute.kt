@@ -52,7 +52,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                     UserGroups.selectAll().where { UserGroups.userId eq userIdFromDB }.map {
                         val groupId = it[UserGroups.groupId]
                         val groupRow = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                        if (groupRow == null) throw Exception("服务端出现错误")
+                        if (groupRow == null) throw IllegalStateException("服务端错误")
                         val groupName = groupRow[Groups.groupName]
                         val permission = it[UserGroups.permission]
                         JoinedGroupInfo(groupId, groupName, permission)
@@ -85,7 +85,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                             if (isUserInGroup(userIdFromDB, groupId)) throw BadRequestException("您已加入该团体")
                         }
 
-                        if (!isGroupCreated(groupId)) throw IllegalArgumentException("该团体不存在")
+                        if (!isGroupCreated(groupId)) throw BadRequestException("该团体不存在")
 
                         // 验证此前是否有同团体号下待审批的申请
                         if (groupPreAuthToken.isNullOrEmpty()) {
@@ -95,7 +95,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 val approvalId = joinGroupApprovalRow[JoinGroupApprovals.approvalId]
                                 val approvalRow =
                                     Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                if (approvalRow == null) throw Exception("服务端出现错误")
+                                if (approvalRow == null) throw IllegalStateException("服务端错误")
                                 if (approvalRow[Approvals.status] == ApprovalStatus.PENDING) throw BadRequestException("您此前已提交过申请，请等待审批")
                             }
                         }
@@ -119,7 +119,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                         val preAuthTokenSM3 = if (groupPreAuthToken.isNullOrEmpty()) null else groupPreAuthToken.sm3()
                         val groupPreAuthTokenIsOk = if (groupPreAuthToken.isNullOrEmpty()) false else {
                             val groupRow = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                            if (groupRow == null) throw Exception("服务端出现错误")
+                            if (groupRow == null) throw IllegalStateException("服务端错误")
                             val groupPreAuthTokenSM3 = groupRow[Groups.groupPreAuthTokenSM3]
                             if (preAuthTokenSM3 != groupPreAuthTokenSM3) {
                                 throw BadRequestException("预授权凭证错误")
@@ -163,7 +163,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 val approvalId = joinGroupApprovalRow[JoinGroupApprovals.approvalId]
                                 val approvalRow =
                                     Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                if (approvalRow == null) throw Exception("服务端出现错误")
+                                if (approvalRow == null) throw IllegalStateException("服务端错误")
                                 if (approvalRow[Approvals.status] == ApprovalStatus.PENDING) Approvals.deleteWhere {
                                     Approvals.approvalId eq approvalId
                                 }
@@ -234,7 +234,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 UserGroups.selectAll().where { UserGroups.groupId eq groupId }.map { member ->
                                     val userId = member[UserGroups.userId]
                                     val userRow = Users.selectAll().where { Users.userId eq userId }.firstOrNull()
-                                    if (userRow == null) throw Exception("服务端出现错误")
+                                    if (userRow == null) throw IllegalStateException("服务端错误")
                                     val userName = userRow[Users.userName]
                                     val permission = member[UserGroups.permission]
                                     GroupInfoMember(userId, userName, permission)

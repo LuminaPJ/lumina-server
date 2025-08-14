@@ -1,5 +1,6 @@
 package org.lumina.utils.security
 
+import io.ktor.server.plugins.*
 import io.ktor.server.routing.*
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
@@ -175,12 +176,12 @@ fun Transaction.protectedRouteWithApproveId(
     weixinOpenId: String, userId: String, approveId: Long, permissions: Set<RuntimePermission>
 ): Boolean {
     val approveRow = Approvals.selectAll().where { Approvals.approvalId eq approveId }.firstOrNull()
-        ?: throw IllegalArgumentException("审批不存在")
+        ?: throw NotFoundException("审批不存在")
     return when (approveRow[Approvals.approvalType]) {
         ApprovalTargetType.GROUP_JOIN -> {
             val joinGroupApprovalRow =
                 JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approveId }.firstOrNull()
-                    ?: throw IllegalArgumentException("审批不存在")
+                    ?: throw NotFoundException("审批不存在")
             val requesterWeixinOpenId = joinGroupApprovalRow[JoinGroupApprovals.requesterWeixinOpenId]
             val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
             if (permissions.contains(SELF)) requesterWeixinOpenId == weixinOpenId || protectedRouteWithGroupId(
@@ -200,6 +201,6 @@ fun Transaction.protectedRouteWithApproveId(
  */
 fun Transaction.isUserSoterEnabledWithUserId(userId: String): Boolean {
     return Users.selectAll().where { Users.userId eq userId }.firstOrNull()?.get(Users.isSoterEnabled)
-        ?: throw IllegalArgumentException("服务器错误")
+        ?: throw IllegalStateException("服务端错误")
 }
 

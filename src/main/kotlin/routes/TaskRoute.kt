@@ -49,7 +49,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                             val taskId = task[Tasks.taskId]
                             val creatorRow =
                                 Users.selectAll().where { Users.userId eq task[Tasks.creator] }.firstOrNull()
-                                    ?: throw IllegalStateException("服务器错误")
+                                    ?: throw IllegalStateException("服务端错误")
                             val creatorName = creatorRow[Users.userName]
                             val taskStatus = getTaskStatus(task, taskId, userId)
                             taskMutableList.add(
