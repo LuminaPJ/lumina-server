@@ -14,7 +14,7 @@ import kotlinx.serialization.json.Json
 import javax.security.sasl.AuthenticationException
 
 fun Application.configureSerialization() {
-
+    val environment = environment.config.property("ktor.environment").getString()
     install(ContentNegotiation) {
         json(Json {
             prettyPrint = true
@@ -24,25 +24,39 @@ fun Application.configureSerialization() {
     }
     install(StatusPages) {
         exception<Throwable> { call, cause ->
-            val status = when (cause) {
-                is ResponseException -> cause.response.status
-                else -> HttpStatusCode.InternalServerError
-            }
-
-            val message = when (cause) {
-                is ResponseException, is AuthenticationException, is BadRequestException, is OAuth1aException, is IllegalStateException, is IllegalArgumentException -> cause.message
-                else -> "服务端错误"
-            }
-
-            call.respond(
-                status = status, message = ErrorResponse(
-                    message = message ?: "服务端错误", statusCode = status.value
+            if (environment.isDev()) {
+                cause.printStackTrace()
+                call.respond(
+                    status = HttpStatusCode.InternalServerError, message = ErrorResponse(
+                        message = cause.toString().ifEmpty { "服务端错误" },
+                        statusCode = HttpStatusCode.InternalServerError.value
+                    )
                 )
-            )
+            } else {
+                val status = when (cause) {
+                    is ResponseException -> cause.response.status
+                    else -> HttpStatusCode.InternalServerError
+                }
+
+                val message = when (cause) {
+                    is ResponseException, is AuthenticationException, is BadRequestException, is OAuth1aException, is IllegalStateException, is IllegalArgumentException -> cause.message
+                    else -> "服务端错误"
+                }
+
+                call.respond(
+                    status = status, message = ErrorResponse(
+                        message = message ?: "服务端错误", statusCode = status.value
+                    )
+                )
+            }
             cause.printStackTrace()
             this@configureSerialization.log.error(cause.toString())
         }
     }
+}
+
+private fun String.isDev(): Boolean {
+    return this == "development" || this == "dev" || this == "test"
 }
 
 @Serializable

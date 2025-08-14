@@ -14,6 +14,7 @@ import org.lumina.utils.security.WeixinContentSecurityScene.SCENE_COMMENT
 import org.lumina.utils.security.WeixinContentSecurityScene.SCENE_FORUM
 import org.lumina.utils.security.WeixinContentSecurityScene.SCENE_PROFILE
 import org.lumina.utils.security.WeixinContentSecurityScene.SCENE_SOCIAL_LOG
+import java.security.InvalidParameterException
 
 /**
  * 场景枚举值
@@ -54,7 +55,7 @@ data class WeixinContentSecurityRequest(
     val signature: String? = null
 ) {
     init {
-        if (scene != SCENE_PROFILE && signature != null) throw IllegalArgumentException("个性签名只允许在资料场景使用")
+        if (scene != SCENE_PROFILE && signature != null) throw InvalidParameterException("个性签名只允许在资料场景使用")
     }
 }
 
