@@ -8,7 +8,6 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
@@ -86,6 +85,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
             }
 
             // 移除成员
+            // TODO：信息加密
             post("/removeMember") {
                 val groupId = call.parameters["groupId"]?.trim() ?: return@post call.respond(
                     HttpStatusCode.BadRequest, INVALID_GROUP_ID
@@ -120,13 +120,22 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     }
                     val conflictUserList = groupManagerResponse.conflictUserList
                     val noPermissionUserList = groupManagerResponse.noPermissionUserList
-                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond("用户移除成功") else call.respond(
-                        HttpStatusCode.NotFound, Json.encodeToString<GroupManagerResponse>(groupManagerResponse)
-                    )
+                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond("用户移除成功") else {
+                        val responseText =
+                            "其他成员已移除。" + if (!conflictUserList.isNullOrEmpty()) "以下成员在团体中未找到：${
+                                conflictUserList.joinToString("、") { it.userId }
+                            }。" else "" + if (!noPermissionUserList.isNullOrEmpty()) "以下成员是管理员，需要先将其设置为普通成员再移除：${
+                                noPermissionUserList.joinToString("、") { it.userId }
+                            }。" else ""
+                        call.respond(
+                            HttpStatusCode.NotFound, responseText
+                        )
+                    }
                 }
             }
 
             // 为团体设置预授权凭证与有效期
+            // TODO：信息加密
             post("/setPreAuthToken") {
                 val groupId = call.parameters["groupId"]?.trim() ?: return@post call.respond(
                     HttpStatusCode.BadRequest, INVALID_GROUP_ID
@@ -170,6 +179,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
             }
 
             // 将成员设置为管理员
+            // TODO：信息加密
             post("/setAdmin") {
                 val groupId = call.parameters["groupId"]?.trim() ?: return@post call.respond(
                     HttpStatusCode.BadRequest, INVALID_GROUP_ID
@@ -212,13 +222,22 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     }
                     val conflictUserList = groupManagerResponse.conflictUserList
                     val noPermissionUserList = groupManagerResponse.noPermissionUserList
-                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond("设置管理员成功") else call.respond(
-                        HttpStatusCode.NotFound, Json.encodeToString<GroupManagerResponse>(groupManagerResponse)
-                    )
+                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond("设置管理员成功") else {
+                        val responseText =
+                            "其他成员设置管理员成功。" + if (!conflictUserList.isNullOrEmpty()) "以下成员在团体中未找到：${
+                                conflictUserList.joinToString("、") { it.userId }
+                            }。" else "" + if (!noPermissionUserList.isNullOrEmpty()) "以下成员已不是不同成员：${
+                                noPermissionUserList.joinToString("、") { it.userId }
+                            }。" else ""
+                        call.respond(
+                            HttpStatusCode.NotFound, responseText
+                        )
+                    }
                 }
             }
 
             // 将管理员（非超管）设置为普通成员
+            // TODO：信息加密
             post("/resetToMember") {
                 val groupId = call.parameters["groupId"]?.trim() ?: return@post call.respond(
                     HttpStatusCode.BadRequest, INVALID_GROUP_ID
@@ -261,9 +280,17 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     }
                     val conflictUserList = groupManagerResponse.conflictUserList
                     val noPermissionUserList = groupManagerResponse.noPermissionUserList
-                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond(message = "取消管理员成功") else call.respond(
-                        HttpStatusCode.NotFound, Json.encodeToString<GroupManagerResponse>(groupManagerResponse)
-                    )
+                    if (conflictUserList.isNullOrEmpty() && noPermissionUserList.isNullOrEmpty()) call.respond(message = "取消管理员成功") else {
+                        val responseText =
+                            "其他成员取消管理员成功。" + if (!conflictUserList.isNullOrEmpty()) "以下成员在团体中未找到：${
+                                conflictUserList.joinToString("、") { it.userId }
+                            }。" else "" + if (!noPermissionUserList.isNullOrEmpty()) "以下成员不是普通管理员：${
+                                noPermissionUserList.joinToString("、") { it.userId }
+                            }。" else ""
+                        call.respond(
+                            HttpStatusCode.NotFound, responseText
+                        )
+                    }
                 }
             }
         }
