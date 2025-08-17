@@ -20,7 +20,11 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_GROUP_ID
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_JWT
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_TASK_ID
-import org.lumina.models.*
+import org.lumina.models.Groups
+import org.lumina.models.UserGroups
+import org.lumina.models.Users
+import org.lumina.models.task.*
+import org.lumina.models.weixinOpenId2UserIdOrNull
 import org.lumina.routes.TaskStatus.*
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
@@ -140,14 +144,35 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         }[Tasks.taskId]
 
                         when (taskType) {
-                            TaskType.CHECK_IN -> CheckInTaskInfoTable.insert {
-                                it[this.taskId] = taskId
-                                it[this.checkInType] = request.checkInType
-                                if (request.checkInType == CheckInType.TOKEN && !request.checkInToken.isNullOrEmpty()) it[this.checkInTokenSM3] =
-                                    request.checkInToken.sm3()
+                            TaskType.CHECK_IN -> {
+                                if (request.checkInType == null) throw BadRequestException("请完善签到配置")
+                                CheckInTaskInfoTable.insert {
+                                    it[this.taskId] = taskId
+                                    it[this.checkInType] = request.checkInType
+                                    if (request.checkInType == CheckInType.TOKEN && !request.checkInToken.isNullOrEmpty()) it[this.checkInTokenSM3] =
+                                        request.checkInToken.sm3()
+                                }
                             }
 
-                            TaskType.VOTE -> TODO()
+                            TaskType.VOTE -> {
+                                if (request.voteTaskOption == null) throw BadRequestException("请完善投票配置")
+                                VoteTaskInfoTable.insert {
+                                    it[this.taskId] = taskId
+                                    it[this.maxSelectable] = request.voteMaxSelectable ?: 1
+                                    it[this.canRecall] = request.voteCanRecall ?: false
+                                    it[this.isResultPublic] = request.isVoteResultPublic ?: true
+                                }
+                                request.voteTaskOption.forEach { option ->
+                                    VoteTaskOptionTable.insert {
+                                        it[this.taskId] = taskId
+                                        it[this.optionName] = option.optionName
+                                        it[this.sortOrder] = option.sortOrder
+                                        if (!option.optionDescription.isNullOrEmpty()) it[this.optionDescription] =
+                                            option.optionDescription
+                                    }
+                                }
+                            }
+
                             TaskType.LOTTERY -> TODO()
                         }
 
@@ -253,7 +278,10 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                 NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
                                 PARTICIPATED -> throw BadRequestException("您已参与此任务")
                                 EXPIRED -> throw BadRequestException("任务已过期")
-                                PENDING -> {
+                                MARK_AS_NOT_PARTICIPANT -> throw BadRequestException("您已被任务创建者标记为未参与，如有需要，请与任务创建者联系")
+                                MARK_AS_PENDING -> throw BadRequestException("您已被任务创建者暂缓处理，请尽快与任务创建者取得联系")
+
+                                PENDING, MARK_AS_PARTICIPANT -> {
                                     val checkInTaskType = checkInTaskRow[CheckInTaskInfoTable.checkInType]
                                     when (checkInTaskType) {
                                         CheckInType.TOKEN -> {
@@ -286,6 +314,10 @@ fun Route.taskRoute(appId: String, appSecret: String) {
  * 获取任务状态
  *
  * 1. 首先判断用户是否在任务参与列表中时，若不在直接返回任务状态为无需参与；
+ * 2. 之后判断此任务是否为签到任务，如果是签到任务且被用户任务创建者干预：
+ *     - 若用户被任务创建者标记为未参与状态，直接返回**标记为**未参与状态，即使用户有参与记录也会被认定未参与
+ *     - 若用户被任务创建者标记为待定状态，返回**标记为**待定状态
+ *     - 若用户被任务创建者标记为已参与状态，如果之前有参与记录则返回已参与，否则返回**标记为**已参与状态
  * 2. 然后判断用户是否参与过此任务，若用户参与过则返回任务状态为已参与；
  * 3. 最后判断任务是否已过期，若已过期则返回任务状态为已过期，未过期则返回任务状态为待参与。
  * @param taskRow
@@ -309,13 +341,25 @@ private fun Transaction.getTaskStatus(taskRow: ResultRow, taskId: Long, userId: 
         }
     }
     return if (!isUserInTask) NOT_REQUIRED else {
+        val checkInTaskInterventionStatus = if (taskRow[Tasks.taskType] == TaskType.CHECK_IN) {
+            val checkInTaskCreatorInterventionRecordRow = CheckInTaskCreatorInterventionRecord.selectAll().where {
+                (CheckInTaskCreatorInterventionRecord.taskId eq taskId) and (CheckInTaskCreatorInterventionRecord.userId eq userId)
+            }.firstOrNull()
+            if (checkInTaskCreatorInterventionRecordRow != null) checkInTaskCreatorInterventionRecordRow[CheckInTaskCreatorInterventionRecord.interventionType] else null
+        } else null
         val isExpired = taskRow[Tasks.endTime] < LocalDateTime.now()
         val userTaskParticipationRecord = TaskParticipationRecord.selectAll().where {
             (TaskParticipationRecord.taskId eq taskId) and (TaskParticipationRecord.userId eq userId)
         }.firstOrNull()
-        if (userTaskParticipationRecord == null) {
-            if (isExpired) EXPIRED else PENDING
-        } else PARTICIPATED
+
+        when (checkInTaskInterventionStatus) {
+            InterventionType.MARK_AS_NOT_PARTICIPANT -> MARK_AS_NOT_PARTICIPANT
+            InterventionType.MARK_AS_PENDING -> MARK_AS_PENDING
+            InterventionType.MARK_AS_PARTICIPANT -> if (userTaskParticipationRecord == null) PENDING else PARTICIPATED
+            else -> if (userTaskParticipationRecord == null) {
+                if (isExpired) EXPIRED else PENDING
+            } else PARTICIPATED
+        }
     }
 }
 
@@ -325,8 +369,11 @@ private fun Transaction.getTaskStatus(taskRow: ResultRow, taskId: Long, userId: 
  * @param PARTICIPATED 已参与
  * @param NOT_REQUIRED 无需参与
  * @param EXPIRED 已过期
+ * @param MARK_AS_PARTICIPANT 被任务创建者标记为已参与
+ * @param MARK_AS_NOT_PARTICIPANT 被任务创建者标记为未参与（若用户被任务创建者标记为此状态，即使用户有参与记录也会被认定未参与）
+ * @param MARK_AS_PENDING 被任务创建者标记为待定
  */
-enum class TaskStatus { PENDING, PARTICIPATED, NOT_REQUIRED, EXPIRED }
+enum class TaskStatus { PENDING, PARTICIPATED, NOT_REQUIRED, EXPIRED, MARK_AS_PARTICIPANT, MARK_AS_NOT_PARTICIPANT, MARK_AS_PENDING }
 
 @Serializable
 private data class TaskInfo(
@@ -367,6 +414,10 @@ private data class CheckInTaskInfo(
  * @param memberPolicyList 成员策略列表
  * @param checkInType 签到类型
  * @param checkInToken 签到验证码
+ * @param voteMaxSelectable 投票最多可选项数量
+ * @param voteCanRecall 是否允许用户撤回投票
+ * @param isVoteResultPublic 是否公开投票结果
+ * @param voteTaskOption 投票选项
  * @param soterInfo SOTER 生物验证信息
  */
 @Serializable
@@ -377,12 +428,24 @@ private data class CreateTaskRequest(
     val endTime: KotlinLocalDateTime,
     val memberPolicy: MemberPolicyType,
     val memberPolicyList: List<UserInfo>? = null,
-    val checkInType: CheckInType,
+
+    val checkInType: CheckInType? = null,
     val checkInToken: String? = null,
+
+    val voteMaxSelectable: Int? = null,
+    val voteCanRecall: Boolean? = null,
+    val isVoteResultPublic: Boolean? = null,
+    val voteTaskOption: List<VoteTaskOption>? = null,
+
     val soterInfo: SoterResultFromUser? = null
 )
 
 @Serializable
 private data class TaskCheckInRequest(
     val checkInToken: String? = null,
+)
+
+@Serializable
+private data class VoteTaskOption(
+    val optionName: String, val sortOrder: Int, val optionDescription: String? = null
 )

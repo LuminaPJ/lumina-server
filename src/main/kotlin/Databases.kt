@@ -6,6 +6,7 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.lumina.models.*
+import org.lumina.models.task.*
 
 fun Application.configureDatabases() {
     val database = Database.connect(
@@ -25,7 +26,11 @@ fun Application.configureDatabases() {
             Tasks,
             TaskMemberPolicies,
             TaskParticipationRecord,
-            CheckInTaskInfoTable
+            CheckInTaskInfoTable,
+            CheckInTaskCreatorInterventionRecord,
+            VoteTaskInfoTable,
+            VoteTaskOptionTable,
+            VoteTaskParticipationRecord
         )
         tables.forEach { table ->
             SchemaUtils.createMissingTablesAndColumns(table)

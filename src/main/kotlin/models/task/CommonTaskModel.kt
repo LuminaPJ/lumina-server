@@ -1,13 +1,13 @@
-package org.lumina.models
+package org.lumina.models.task
 
 import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.javatime.datetime
-import org.lumina.models.CheckInType.ORDINARY
-import org.lumina.models.CheckInType.TOKEN
-import org.lumina.models.MemberPolicyType.BLACKLIST
-import org.lumina.models.MemberPolicyType.WHITELIST
-import org.lumina.models.TaskType.*
+import org.lumina.models.Groups
+import org.lumina.models.Users
+import org.lumina.models.task.MemberPolicyType.BLACKLIST
+import org.lumina.models.task.MemberPolicyType.WHITELIST
+import org.lumina.models.task.TaskType.*
 
 /**
  * 任务类型枚举
@@ -54,25 +54,9 @@ object TaskMemberPolicies : Table("task_member_policies") {
 /**
  * 任务参与记录
  */
-object TaskParticipationRecord: Table("task_participation_record") {
+object TaskParticipationRecord : Table("task_participation_record") {
     val taskId = reference("task_id", Tasks.taskId, onDelete = ReferenceOption.CASCADE)
     val userId = reference("user_id", Users.userId, onDelete = ReferenceOption.CASCADE)
     val participatedAt = datetime("participated_at")
     override val primaryKey = PrimaryKey(taskId, userId)
 }
-
-/**
- * 签到任务类型
- * @property ORDINARY 普通签到
- * @property TOKEN 验证码签到（签到需要输验证码）
- */
-enum class CheckInType { ORDINARY, TOKEN }
-
-object CheckInTaskInfoTable : Table("check_in_task_info_table") {
-    val taskId = reference("task_id", Tasks.taskId, onDelete = ReferenceOption.CASCADE)
-    val checkInType = enumerationByName("check_in_type", 20, CheckInType::class)
-    val checkInTokenSM3 = text("check_in_token_sm3").nullable()
-    override val primaryKey = PrimaryKey(taskId)
-}
-
-
