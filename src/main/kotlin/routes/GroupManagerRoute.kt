@@ -49,10 +49,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request =
-                    call.receive<GroupRenameRequest>().normalized() as? GroupRenameRequest ?: return@post call.respond(
-                        HttpStatusCode.BadRequest, "请求格式错误"
-                    )
+                val request = call.receive<GroupRenameRequest>().normalized()
                 val isContentSafety = temporaryWeixinContentSecurityCheck(
                     appId, appSecret, WeixinContentSecurityRequest(
                         content = request.newGroupName,
@@ -94,8 +91,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request = call.receive<GroupManagerRequest>().normalized() as? GroupManagerRequest
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "请求格式错误")
+                val request = call.receive<GroupManagerRequest>().normalized()
                 protectedRoute(
                     weixinOpenId, groupId, SUPERADMIN_ADMIN_SET, CheckType.GROUP_ID, "移除成员", true, request.soterInfo
                 ) {
@@ -144,8 +140,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request = call.receive<SetGroupPreAuthTokenRequest>().normalized() as? SetGroupPreAuthTokenRequest
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "请求格式错误")
+                val request = call.receive<SetGroupPreAuthTokenRequest>().normalized()
                 val preAuthToken = request.preAuthToken
                 val isContentSafety = temporaryWeixinContentSecurityCheck(
                     appId, appSecret, WeixinContentSecurityRequest(
@@ -188,8 +183,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request = call.receive<GroupManagerRequest>().normalized() as? GroupManagerRequest
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "请求格式错误")
+                val request = call.receive<GroupManagerRequest>().normalized()
                 protectedRoute(
                     weixinOpenId,
                     groupId,
@@ -246,8 +240,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request = call.receive<GroupManagerRequest>().normalized() as? GroupManagerRequest
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "请求格式错误")
+                val request = call.receive<GroupManagerRequest>().normalized()
                 protectedRoute(
                     weixinOpenId,
                     groupId,

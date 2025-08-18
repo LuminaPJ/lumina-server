@@ -194,7 +194,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                         HttpStatusCode.BadRequest, INVALID_APPROVAL_ID
                     )
                 }
-                val actionRequest = call.receive<ApprovalActionRequest>().normalized() as ApprovalActionRequest
+                val actionRequest = call.receive<ApprovalActionRequest>().normalized()
                 val action = requireNotNull(actionRequest.action) { "操作不能为空" }
                 if (action != WITHDRAW) throw IllegalArgumentException("用户端操作出错")
 
@@ -247,7 +247,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                     weixinDecryptContent(
                         appId, appSecret, weixinUserCryptoKeyRequest
                     )
-                ).normalized() as ApprovalActionRequest
+                ).normalized()
 
                 protectedRoute(
                     weixinOpenId,

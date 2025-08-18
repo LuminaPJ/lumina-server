@@ -7,7 +7,7 @@ import kotlin.reflect.jvm.isAccessible
 /**
  * 将用户提交的对象中所有字符串 `trim()` 化
  */
-fun Any.normalized(): Any {
+fun <T : Any> T.normalized(): T {
     val obj = this
     val kClass = obj::class
 
@@ -19,7 +19,7 @@ fun Any.normalized(): Any {
                 is List<*> -> value.normalized()
                 else -> value
             }
-        } as Map<*, *>
+        } as T
     }
 
     if (obj is List<*>) {
@@ -30,7 +30,7 @@ fun Any.normalized(): Any {
                 is List<*> -> item.normalized()
                 else -> item
             }
-        }
+        } as T
     }
 
     kClass.memberProperties.forEach { property ->

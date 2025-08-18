@@ -3,7 +3,6 @@ package org.lumina.models.task
 import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.Table
 import org.lumina.models.Users
-import kotlin.math.log
 
 /**
  * 投票任务信息

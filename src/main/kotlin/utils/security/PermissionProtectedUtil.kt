@@ -165,7 +165,7 @@ fun Transaction.protectedRouteWithTaskId(
     val taskRow =
         Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull() ?: throw IllegalArgumentException("任务不存在")
     val creator = taskRow[Tasks.creator]
-    if (creator == userId && permissions.contains(SELF)) return true else return protectedRouteWithGroupId(
+    return if (creator == userId && permissions.contains(SELF)) permissions.contains(SELF) else protectedRouteWithGroupId(
         userId, taskRow[Tasks.groupId], permissions
     )
 }

@@ -72,7 +72,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                             HttpStatusCode.Unauthorized, INVALID_JWT
                         )
                     val weixinUnionId = call.principal<JWTPrincipal>()?.get("weixinUnionId")?.trim()
-                    val request = call.receive<GroupJoinRequest>().normalized() as GroupJoinRequest
+                    val request = call.receive<GroupJoinRequest>().normalized()
                     val requesterUserId = request.requesterUserId
                     val requesterUserName = request.requesterUserName
                     val requesterComment = request.requesterComment
@@ -184,7 +184,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                         call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                             HttpStatusCode.Unauthorized, INVALID_JWT
                         )
-                    val request = call.receive<GroupQuitRequest>().normalized() as GroupQuitRequest
+                    val request = call.receive<GroupQuitRequest>().normalized()
                     protectedRoute(
                         weixinOpenId,
                         groupId,

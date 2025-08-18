@@ -33,7 +33,7 @@ fun Routing.devRoute(appId: String, appSecret: String) {
                     call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
-                val request = call.receive<EncryptContentRequest>().normalized() as EncryptContentRequest
+                val request = call.receive<EncryptContentRequest>().normalized()
                 val weixinUserCryptoKeyRequest = WeixinUserCryptoKeyRequest(
                     weixinOpenId,
                     request.encryptContent,

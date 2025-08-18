@@ -12,8 +12,11 @@ import kotlinx.datetime.toKotlinLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.count
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -97,7 +100,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
 
                 val request = Json.decodeFromString<CreateTaskRequest>(
                     weixinDecryptContent(appId, appSecret, weixinUserCryptoKeyRequest)
-                ).normalized() as CreateTaskRequest
+                ).normalized()
                 val taskName = request.taskName
                 val taskType = request.taskType
                 val description = request.description
@@ -251,7 +254,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
                             HttpStatusCode.Unauthorized, INVALID_JWT
                         )
-                    val request = call.receive<TaskCheckInRequest>().normalized() as TaskCheckInRequest
+                    val request = call.receive<TaskCheckInRequest>().normalized()
                     protectedRoute(
                         weixinOpenId,
                         taskIdString,
@@ -303,6 +306,242 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                             }
                         }
                         call.respond(HttpStatusCode.OK)
+                    }
+                }
+            }
+
+            route("/vote/{taskId}") {
+
+                // 获取投票信息
+                get {
+                    val taskIdString = call.parameters["taskId"]?.trim() ?: return@get call.respond(
+                        HttpStatusCode.BadRequest, INVALID_TASK_ID
+                    )
+                    val weixinOpenId =
+                        call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@get call.respond(
+                            HttpStatusCode.Unauthorized, INVALID_JWT
+                        )
+                    protectedRoute(
+                        weixinOpenId,
+                        taskIdString,
+                        SUPERADMIN_ADMIN_MEMBER_SET,
+                        CheckType.TASK_ID,
+                        "获取任务 $taskIdString 的投票信息",
+                        false
+                    ) {
+                        val taskId = try {
+                            taskIdString.toLong()
+                        } catch (_: NumberFormatException) {
+                            throw BadRequestException(INVALID_TASK_ID)
+                        }
+                        val voteTaskInfo = transaction {
+                            val userId =
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                            val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
+                                ?: throw BadRequestException(INVALID_TASK_ID)
+                            val voteTaskRow =
+                                VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
+                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                            val groupId = taskRow[Tasks.groupId]
+                            val groupName = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
+                                ?.get(Groups.groupName)
+                            val creatorId = taskRow[Tasks.creator]
+                            val creatorName =
+                                Users.selectAll().where { Users.userId eq creatorId }.firstOrNull()?.get(Users.userName)
+                            val taskStatus = getTaskStatus(taskRow, taskId, userId)
+                            val isVoteResultPublic = voteTaskRow[VoteTaskInfoTable.isResultPublic]
+                            val voteTaskOptions: List<VoteTaskOption> = run {
+                                val options =
+                                    VoteTaskOptionTable.selectAll().where { VoteTaskOptionTable.taskId eq taskId }
+                                        .orderBy(VoteTaskOptionTable.sortOrder).toList()
+
+                                // 批量获取所有选项的投票计数
+                                val optionIds = options.map { it[VoteTaskOptionTable.optionId] }
+                                val voteCounts = mutableMapOf<Long, Int>()
+                                val userSelectedOptions = mutableSetOf<Long>()
+
+                                // 已参与或已结束，且允许公开结果的情况下才可查看结果
+                                if ((taskStatus == PARTICIPATED || taskStatus == EXPIRED) && isVoteResultPublic) {
+                                    val voteCountResults = VoteTaskParticipationRecord.selectAll()
+                                        .where { VoteTaskParticipationRecord.selectedOption inList optionIds }
+                                        .groupBy(VoteTaskParticipationRecord.selectedOption)
+
+                                    voteCountResults.forEach { result ->
+                                        val optionId = result[VoteTaskParticipationRecord.selectedOption]
+                                        val count = result[VoteTaskParticipationRecord.selectedOption.count()].toInt()
+                                        voteCounts[optionId] = count
+                                    }
+                                }
+
+                                // 查询用户选择的选项
+                                if (taskStatus == PARTICIPATED) {
+                                    val userSelections = VoteTaskParticipationRecord.selectAll().where {
+                                        (VoteTaskParticipationRecord.taskId eq taskId) and (VoteTaskParticipationRecord.userId eq userId) and (VoteTaskParticipationRecord.selectedOption inList optionIds)
+                                    }
+
+                                    userSelections.forEach { result ->
+                                        userSelectedOptions.add(result[VoteTaskParticipationRecord.selectedOption])
+                                    }
+                                }
+
+                                val voteOptions = options.map { option ->
+                                    val optionId = option[VoteTaskOptionTable.optionId]
+                                    val selectedCount = voteCounts[optionId]
+                                    val isSelected = userSelectedOptions.contains(optionId)
+
+                                    VoteTaskOption(
+                                        option[VoteTaskOptionTable.optionName],
+                                        option[VoteTaskOptionTable.sortOrder],
+                                        isSelected,
+                                        option[VoteTaskOptionTable.optionDescription],
+                                        selectedCount
+                                    )
+                                }
+                                return@run voteOptions
+                            }
+
+                            VoteTaskInfo(
+                                taskIdString,
+                                groupId,
+                                groupName,
+                                taskRow[Tasks.taskName],
+                                voteTaskRow[VoteTaskInfoTable.maxSelectable],
+                                voteTaskRow[VoteTaskInfoTable.canRecall],
+                                isVoteResultPublic,
+                                voteTaskOptions,
+                                taskRow[Tasks.description],
+                                taskRow[Tasks.endTime].toKotlinLocalDateTime(),
+                                taskStatus,
+                                taskRow[Tasks.createdAt].toKotlinLocalDateTime(),
+                                creatorId,
+                                creatorName
+                            )
+                        }
+                        call.respond(voteTaskInfo)
+                    }
+                }
+
+                // 投票
+                post {
+                    val taskIdString = call.parameters["taskId"]?.trim() ?: return@post call.respond(
+                        HttpStatusCode.BadRequest, INVALID_TASK_ID
+                    )
+                    val weixinOpenId =
+                        call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
+                            HttpStatusCode.Unauthorized, INVALID_JWT
+                        )
+                    val request = call.receive<TaskVoteRequest>().normalized()
+                    protectedRoute(
+                        weixinOpenId,
+                        taskIdString,
+                        SUPERADMIN_ADMIN_MEMBER_SET,
+                        CheckType.TASK_ID,
+                        "对任务 $taskIdString 投票",
+                        true,
+                        request.soterInfo
+                    ) {
+                        val taskId = try {
+                            taskIdString.toLong()
+                        } catch (_: NumberFormatException) {
+                            throw BadRequestException(INVALID_TASK_ID)
+                        }
+                        transaction {
+                            val userId =
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                            val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
+                                ?: throw BadRequestException(INVALID_TASK_ID)
+                            val voteTaskRow =
+                                VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
+                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                            val taskStatus = getTaskStatus(taskRow, taskId, userId)
+                            when (taskStatus) {
+                                NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
+                                PARTICIPATED -> throw BadRequestException("您已参与此任务")
+                                EXPIRED -> throw BadRequestException("任务已过期")
+                                PENDING -> {
+                                    // 验证用户提交的选项是否有效
+                                    val maxSelectable = voteTaskRow[VoteTaskInfoTable.maxSelectable]
+                                    if (request.voteOptions.isEmpty()) throw BadRequestException("请至少选择一个选项")
+                                    if (request.voteOptions.size > maxSelectable) throw BadRequestException("最多只能选择 $maxSelectable 个选项")
+                                    val validOptions = VoteTaskOptionTable.selectAll().where {
+                                        VoteTaskOptionTable.taskId eq taskId
+                                    }.associateBy { it[VoteTaskOptionTable.optionName] }
+                                    val selectedOptionIds = request.voteOptions.map { optionName ->
+                                        validOptions[optionName]?.get(VoteTaskOptionTable.optionId)
+                                            ?: throw BadRequestException("存在无效的投票选项：$optionName")
+                                    }
+
+                                    selectedOptionIds.forEach { optionId ->
+                                        VoteTaskParticipationRecord.insert {
+                                            it[this.taskId] = taskId
+                                            it[this.userId] = userId
+                                            it[this.selectedOption] = optionId
+                                        }
+                                    }
+                                    TaskParticipationRecord.insert {
+                                        it[this.taskId] = taskId
+                                        it[this.userId] = userId
+                                        it[this.participatedAt] = LocalDateTime.now()
+                                    }
+                                }
+
+                                else -> throw BadRequestException("服务端错误")
+                            }
+                        }
+                        call.respond(HttpStatusCode.OK)
+                    }
+                }
+
+                // 撤回投票
+                post("/recall") {
+                    val taskIdString = call.parameters["taskId"]?.trim() ?: return@post call.respond(
+                        HttpStatusCode.BadRequest, INVALID_TASK_ID
+                    )
+                    val weixinOpenId =
+                        call.principal<JWTPrincipal>()?.get("weixinOpenId")?.trim() ?: return@post call.respond(
+                            HttpStatusCode.Unauthorized, INVALID_JWT
+                        )
+                    val request = call.receive<TaskRecallVoteRequest>().normalized()
+                    protectedRoute(
+                        weixinOpenId,
+                        taskIdString,
+                        SUPERADMIN_ADMIN_MEMBER_SET,
+                        CheckType.TASK_ID,
+                        "撤回对任务 $taskIdString 的投票",
+                        true,
+                        request.soterInfo
+                    ) {
+                        val taskId = try {
+                            taskIdString.toLong()
+                        } catch (_: NumberFormatException) {
+                            throw BadRequestException(INVALID_TASK_ID)
+                        }
+                        transaction {
+                            val userId =
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                            val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
+                                ?: throw BadRequestException(INVALID_TASK_ID)
+                            val voteTaskRow =
+                                VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
+                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                            val taskStatus = getTaskStatus(taskRow, taskId, userId)
+                            when (taskStatus) {
+                                NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
+                                EXPIRED -> throw BadRequestException("任务已结束，无法撤回")
+                                PENDING -> throw BadRequestException("您尚未参与此任务，因此无需撤回")
+                                PARTICIPATED -> {
+                                    if (!voteTaskRow[VoteTaskInfoTable.canRecall]) throw BadRequestException("该投票任务不允许撤回")
+                                    VoteTaskParticipationRecord.deleteWhere {
+                                        (VoteTaskParticipationRecord.taskId eq taskId) and (VoteTaskParticipationRecord.userId eq userId)
+                                    }
+                                    TaskParticipationRecord.deleteWhere {
+                                        (TaskParticipationRecord.taskId eq taskId) and (TaskParticipationRecord.userId eq userId)
+                                    }
+                                }
+
+                                else -> throw BadRequestException("服务端错误")
+                            }
+                        }
                     }
                 }
             }
@@ -404,6 +643,24 @@ private data class CheckInTaskInfo(
     val creatorName: String? = null,
 )
 
+@Serializable
+private data class VoteTaskInfo(
+    val taskId: String,
+    val groupId: String,
+    val groupName: String? = null,
+    val taskName: String,
+    val voteMaxSelectable: Int,
+    val voteCanRecall: Boolean,
+    val isVoteResultPublic: Boolean,
+    val voteTaskOptions: List<VoteTaskOption>,
+    val description: String? = null,
+    val endTime: KotlinLocalDateTime,
+    val status: TaskStatus,
+    val createdAt: KotlinLocalDateTime,
+    val creatorId: String,
+    val creatorName: String? = null,
+)
+
 /**
  * 创建任务
  * @param taskName 任务名
@@ -441,11 +698,19 @@ private data class CreateTaskRequest(
 )
 
 @Serializable
-private data class TaskCheckInRequest(
-    val checkInToken: String? = null,
-)
+private data class TaskCheckInRequest(val checkInToken: String? = null)
+
+@Serializable
+private data class TaskVoteRequest(val voteOptions: List<String>, val soterInfo: SoterResultFromUser? = null)
+
+@Serializable
+private data class TaskRecallVoteRequest(val soterInfo: SoterResultFromUser? = null)
 
 @Serializable
 private data class VoteTaskOption(
-    val optionName: String, val sortOrder: Int, val optionDescription: String? = null
+    val optionName: String,
+    val sortOrder: Int,
+    val isUserSelected: Boolean,
+    val optionDescription: String? = null,
+    val voteCount: Int? = null
 )

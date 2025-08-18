@@ -25,7 +25,7 @@ import org.lumina.utils.normalized
 fun Routing.weixinAuthRoute(appId: String, appSecret: String) {
     route("/weixin") {
         post("/login") {
-            val request = call.receive<WeixinLoginRequest>().normalized() as WeixinLoginRequest
+            val request = call.receive<WeixinLoginRequest>().normalized()
             val weixinUserInfo = code2WeixinOpenIdOrNull(appId, appSecret, request.code)
             val weixinOpenId = weixinUserInfo.openid ?: throw MissingTokenException()
             val weixinUnionId = weixinUserInfo.unionid
