@@ -18,6 +18,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_GROUP_ID
@@ -104,11 +105,14 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                 val taskName = request.taskName
                 val taskType = request.taskType
                 val description = request.description
-                val endTime = request.endTime
+                val endTime = request.endTime.toJavaLocalDateTime()
                 val memberPolicy = request.memberPolicy
                 val memberPolicyList = request.memberPolicyList ?: emptyList()
                 val checkInToken = request.checkInToken
                 if (taskName.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, "请填写任务名")
+                if (endTime < LocalDateTime.now()) return@post call.respond(
+                    HttpStatusCode.BadRequest, "提交的结束时间已过，请检查结束时间是否填写正确"
+                )
                 if (request.checkInType == CheckInType.TOKEN && request.checkInToken.isNullOrEmpty()) return@post call.respond(
                     HttpStatusCode.BadRequest, "请填写签到验证码"
                 )
@@ -140,7 +144,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                             it[this.taskName] = taskName
                             it[this.taskType] = taskType
                             it[this.description] = description
-                            it[this.endTime] = endTime.toJavaLocalDateTime()
+                            it[this.endTime] = endTime
                             it[this.memberPolicy] = memberPolicy
                             it[this.createdAt] = LocalDateTime.now()
                             it[this.creator] = userId
@@ -159,6 +163,9 @@ fun Route.taskRoute(appId: String, appSecret: String) {
 
                             TaskType.VOTE -> {
                                 if (request.voteTaskOption == null) throw BadRequestException("请完善投票配置")
+                                val optionNames = request.voteTaskOption.map { it.optionName }
+                                if (optionNames.size != optionNames.distinct().size) throw BadRequestException("投票选项名称不能重复")
+
                                 VoteTaskInfoTable.insert {
                                     it[this.taskId] = taskId
                                     it[this.maxSelectable] = request.voteMaxSelectable ?: 1
@@ -362,8 +369,10 @@ fun Route.taskRoute(appId: String, appSecret: String) {
 
                                 // 已参与或已结束，且允许公开结果的情况下才可查看结果
                                 if ((taskStatus == PARTICIPATED || taskStatus == EXPIRED) && isVoteResultPublic) {
-                                    val voteCountResults = VoteTaskParticipationRecord.selectAll()
-                                        .where { VoteTaskParticipationRecord.selectedOption inList optionIds }
+                                    val voteCountResults = VoteTaskParticipationRecord.select(
+                                            VoteTaskParticipationRecord.selectedOption,
+                                            VoteTaskParticipationRecord.selectedOption.count()
+                                        ).where { VoteTaskParticipationRecord.selectedOption inList optionIds }
                                         .groupBy(VoteTaskParticipationRecord.selectedOption)
 
                                     voteCountResults.forEach { result ->
@@ -387,7 +396,8 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                 val voteOptions = options.map { option ->
                                     val optionId = option[VoteTaskOptionTable.optionId]
                                     val selectedCount = voteCounts[optionId]
-                                    val isSelected = userSelectedOptions.contains(optionId)
+                                    val isSelected =
+                                        if (taskStatus == PARTICIPATED) userSelectedOptions.contains(optionId) else null
 
                                     VoteTaskOption(
                                         option[VoteTaskOptionTable.optionName],
@@ -542,6 +552,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                 else -> throw BadRequestException("服务端错误")
                             }
                         }
+                        call.respond(HttpStatusCode.OK)
                     }
                 }
             }
@@ -710,7 +721,7 @@ private data class TaskRecallVoteRequest(val soterInfo: SoterResultFromUser? = n
 private data class VoteTaskOption(
     val optionName: String,
     val sortOrder: Int,
-    val isUserSelected: Boolean,
+    val isUserSelected: Boolean? = null,
     val optionDescription: String? = null,
     val voteCount: Int? = null
 )
