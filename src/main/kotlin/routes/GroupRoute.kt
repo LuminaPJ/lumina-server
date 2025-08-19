@@ -125,7 +125,8 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 throw BadRequestException("预授权凭证错误")
                             } else {
                                 val groupPreAuthTokenEndTime = groupRow[Groups.preAuthTokenEndTime]
-                                groupPreAuthTokenEndTime != null && groupPreAuthTokenEndTime >= LocalDateTime.now()
+                                groupPreAuthTokenEndTime != null && LocalDateTime.now()
+                                    .isBefore(groupPreAuthTokenEndTime)
                             }
                         }
 
@@ -240,7 +241,9 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                     GroupInfoMember(userId, userName, permission)
                                 }
                             val isPreAuthTokenEnable =
-                                groupRow[Groups.groupPreAuthTokenSM3] != null && groupRow[Groups.preAuthTokenEndTime] != null && groupRow[Groups.preAuthTokenEndTime]!! > LocalDateTime.now()
+                                groupRow[Groups.groupPreAuthTokenSM3] != null && groupRow[Groups.preAuthTokenEndTime] != null && groupRow[Groups.preAuthTokenEndTime]?.isAfter(
+                                    LocalDateTime.now()
+                                ) ?: false
                             GroupInfoResponse(
                                 groupId, groupName, createAt.toKotlinLocalDateTime(), isPreAuthTokenEnable, memberList
                             )

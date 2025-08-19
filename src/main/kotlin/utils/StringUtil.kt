@@ -19,7 +19,7 @@ fun <T : Any> T.normalized(): T {
                 is List<*> -> value.normalized()
                 else -> value
             }
-        } as T
+        } as? T ?: throw IllegalArgumentException("服务端错误")
     }
 
     if (obj is List<*>) {
@@ -30,7 +30,7 @@ fun <T : Any> T.normalized(): T {
                 is List<*> -> item.normalized()
                 else -> item
             }
-        } as T
+        } as? T ?: throw IllegalArgumentException("服务端错误")
     }
 
     kClass.memberProperties.forEach { property ->
