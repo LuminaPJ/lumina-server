@@ -3,7 +3,6 @@ package org.lumina.routes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -22,6 +21,8 @@ import org.lumina.fields.ReturnInvalidReasonFields.INVALID_GROUP_ID
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_JWT
 import org.lumina.fields.ReturnInvalidReasonFields.UNSAFE_CONTENT
 import org.lumina.models.*
+import org.lumina.utils.LuminaBadRequestException
+import org.lumina.utils.LuminaIllegalStateException
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
 import org.lumina.utils.security.RuntimePermission.ADMIN
@@ -52,7 +53,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                     UserGroups.selectAll().where { UserGroups.userId eq userIdFromDB }.map {
                         val groupId = it[UserGroups.groupId]
                         val groupRow = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                        if (groupRow == null) throw IllegalStateException("服务端错误")
+                        if (groupRow == null) throw LuminaIllegalStateException("服务端错误")
                         val groupName = groupRow[Groups.groupName]
                         val permission = it[UserGroups.permission]
                         JoinedGroupInfo(groupId, groupName, permission)
@@ -81,11 +82,11 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                     val userIdFromDB = transaction {
                         val userIdFromDB = weixinOpenId2UserIdOrNull(weixinOpenId)
                         if (userIdFromDB != null) {
-                            if (userIdFromDB != requesterUserId) throw BadRequestException("您的微信账号似乎曾绑定过用户 ID，但现在您填入的用户 ID 与数据库中您微信绑定的用户 ID 不一致。如需更改用户 ID，请联系客服进行处理。")
-                            if (isUserInGroup(userIdFromDB, groupId)) throw BadRequestException("您已加入该团体")
+                            if (userIdFromDB != requesterUserId) throw LuminaBadRequestException("您的微信账号似乎曾绑定过用户 ID，但现在您填入的用户 ID 与数据库中您微信绑定的用户 ID 不一致。如需更改用户 ID，请联系客服进行处理。")
+                            if (isUserInGroup(userIdFromDB, groupId)) throw LuminaBadRequestException("您已加入该团体")
                         }
 
-                        if (!isGroupCreated(groupId)) throw BadRequestException("该团体不存在")
+                        if (!isGroupCreated(groupId)) throw LuminaBadRequestException("该团体不存在")
 
                         // 验证此前是否有同团体号下待审批的申请
                         if (groupPreAuthToken.isNullOrEmpty()) {
@@ -95,8 +96,10 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 val approvalId = joinGroupApprovalRow[JoinGroupApprovals.approvalId]
                                 val approvalRow =
                                     Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                if (approvalRow == null) throw IllegalStateException("服务端错误")
-                                if (approvalRow[Approvals.status] == ApprovalStatus.PENDING) throw BadRequestException("您此前已提交过申请，请等待审批")
+                                if (approvalRow == null) throw LuminaIllegalStateException("服务端错误")
+                                if (approvalRow[Approvals.status] == ApprovalStatus.PENDING) throw LuminaBadRequestException(
+                                    "您此前已提交过申请，请等待审批"
+                                )
                             }
                         }
                         userIdFromDB
@@ -111,7 +114,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                             nickname = requesterUserName
                         )
                     )
-                    if (!weixinContentSecurityCheck) throw BadRequestException(UNSAFE_CONTENT)
+                    if (!weixinContentSecurityCheck) throw LuminaBadRequestException(UNSAFE_CONTENT)
                     val isJoin = transaction {
                         // 这里的判断逻辑是，如果进团体临时令牌没写就认为是应该经过审批加入请求，进入审批数据库
                         // 如果进团体预授权凭证不符合数据库设置则直接打回，请求不进入数据库
@@ -119,10 +122,10 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                         val preAuthTokenSM3 = if (groupPreAuthToken.isNullOrEmpty()) null else groupPreAuthToken.sm3()
                         val groupPreAuthTokenIsOk = if (groupPreAuthToken.isNullOrEmpty()) false else {
                             val groupRow = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                            if (groupRow == null) throw IllegalStateException("服务端错误")
+                            if (groupRow == null) throw LuminaIllegalStateException("服务端错误")
                             val groupPreAuthTokenSM3 = groupRow[Groups.groupPreAuthTokenSM3]
                             if (preAuthTokenSM3 != groupPreAuthTokenSM3) {
-                                throw BadRequestException("预授权凭证错误")
+                                throw LuminaBadRequestException("预授权凭证错误")
                             } else {
                                 val groupPreAuthTokenEndTime = groupRow[Groups.preAuthTokenEndTime]
                                 groupPreAuthTokenEndTime != null && LocalDateTime.now()
@@ -164,7 +167,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 val approvalId = joinGroupApprovalRow[JoinGroupApprovals.approvalId]
                                 val approvalRow =
                                     Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                if (approvalRow == null) throw IllegalStateException("服务端错误")
+                                if (approvalRow == null) throw LuminaIllegalStateException("服务端错误")
                                 if (approvalRow[Approvals.status] == ApprovalStatus.PENDING) Approvals.deleteWhere {
                                     Approvals.approvalId eq approvalId
                                 }
@@ -197,10 +200,10 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                     ) {
                         transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val groupRow = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_GROUP_ID)
-                            if (groupRow[Groups.superAdmin] == userId) throw BadRequestException("超级管理员无法退出此团体")
+                                ?: throw LuminaBadRequestException(INVALID_GROUP_ID)
+                            if (groupRow[Groups.superAdmin] == userId) throw LuminaBadRequestException("超级管理员无法退出此团体")
                             UserGroups.deleteWhere {
                                 (UserGroups.userId eq userId) and (UserGroups.groupId eq groupId)
                             }
@@ -235,7 +238,7 @@ fun Route.groupRoute(appId: String, appSecret: String) {
                                 UserGroups.selectAll().where { UserGroups.groupId eq groupId }.map { member ->
                                     val userId = member[UserGroups.userId]
                                     val userRow = Users.selectAll().where { Users.userId eq userId }.firstOrNull()
-                                    if (userRow == null) throw IllegalStateException("服务端错误")
+                                    if (userRow == null) throw LuminaIllegalStateException("服务端错误")
                                     val userName = userRow[Users.userName]
                                     val permission = member[UserGroups.permission]
                                     GroupInfoMember(userId, userName, permission)

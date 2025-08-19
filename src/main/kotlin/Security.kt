@@ -14,6 +14,7 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_JWT
+import org.lumina.utils.LuminaAuthenticationException
 import org.lumina.utils.security.SM3WithSM2Algorithm
 import java.security.*
 import java.util.*
@@ -21,7 +22,6 @@ import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import javax.security.sasl.AuthenticationException
 
 fun Application.configureSecurity() {
     Security.addProvider(KonaProvider())
@@ -32,16 +32,18 @@ fun Application.configureSecurity() {
             authHeader { call ->
                 val header = call.request.parseAuthorizationHeader() as? HttpAuthHeader.Single ?: return@authHeader null
 
-                if (!header.authScheme.equals("Bearer", ignoreCase = true)) throw AuthenticationException(INVALID_JWT)
+                if (!header.authScheme.equals("Bearer", ignoreCase = true)) throw LuminaAuthenticationException(
+                    INVALID_JWT
+                )
 
                 val token = header.blob
                 val isJwe = token.count { it == '.' } == 4
 
-                if (!isJwe) throw AuthenticationException(INVALID_JWT) else {
+                if (!isJwe) throw LuminaAuthenticationException(INVALID_JWT) else {
                     val decrypted = try {
                         decryptJWE(token, envVar.encKeyPair.private)
                     } catch (_: Exception) {
-                        throw AuthenticationException(INVALID_JWT)
+                        throw LuminaAuthenticationException(INVALID_JWT)
                     }
                     HttpAuthHeader.Single("Bearer", decrypted)
                 }
@@ -111,7 +113,7 @@ private fun createJWE(payload: String, publicKey: PublicKey): String {
 // 解密JWE（验证时使用）
 private fun decryptJWE(token: String, privateKey: PrivateKey): String {
     val parts = token.split(".")
-    if (parts.size != 5) throw AuthenticationException(INVALID_JWT)
+    if (parts.size != 5) throw LuminaAuthenticationException(INVALID_JWT)
 
     try {
         // 解码各部分
@@ -137,7 +139,7 @@ private fun decryptJWE(token: String, privateKey: PrivateKey): String {
 
         return String(plainText, Charsets.UTF_8)
     } catch (_: Exception) {
-        throw AuthenticationException(INVALID_JWT)
+        throw LuminaAuthenticationException(INVALID_JWT)
     }
 }
 

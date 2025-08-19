@@ -3,7 +3,6 @@ package org.lumina.routes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -20,6 +19,7 @@ import org.lumina.fields.ReturnInvalidReasonFields.UNSAFE_CONTENT
 import org.lumina.models.Groups
 import org.lumina.models.UserGroups
 import org.lumina.models.UserRole
+import org.lumina.utils.LuminaNotFoundException
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
 import org.lumina.utils.security.RuntimePermission.SUPER_ADMIN
@@ -72,7 +72,7 @@ fun Route.groupManagerRoute(appId: String, appSecret: String) {
                 ) {
                     transaction {
                         val group = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                        if (group == null) throw NotFoundException("群组不存在")
+                        if (group == null) throw LuminaNotFoundException("群组不存在")
                         Groups.update({ Groups.groupId eq groupId }) {
                             it[Groups.groupName] = request.newGroupName
                         }

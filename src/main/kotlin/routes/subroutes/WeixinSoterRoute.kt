@@ -3,7 +3,6 @@ package org.lumina.routes.subroutes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -16,10 +15,11 @@ import org.lumina.fields.ReturnInvalidReasonFields.INVALID_JWT
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_SOTER
 import org.lumina.fields.ReturnInvalidReasonFields.USER_NOT_FOUND
 import org.lumina.models.Users
+import org.lumina.utils.LuminaAuthenticationException
+import org.lumina.utils.LuminaBadRequestException
 import org.lumina.utils.security.SoterResultFromUser
 import org.lumina.utils.security.WeixinSoterCheckRequest
 import org.lumina.utils.security.weixinSoterCheck
-import javax.security.sasl.AuthenticationException
 
 /**
  * Soter 路由
@@ -55,10 +55,10 @@ fun Routing.weixinSoterRoute(appId: String, appSecret: String) {
                         weixinOpenId, request.soterInfo.json_string, request.soterInfo.json_signature
                     )
                 )
-                if (!isSoterPassed) throw AuthenticationException(INVALID_SOTER)
+                if (!isSoterPassed) throw LuminaAuthenticationException(INVALID_SOTER)
                 transaction {
                     val userRow = Users.selectAll().where { Users.weixinOpenId eq weixinOpenId }.firstOrNull()
-                        ?: throw BadRequestException(USER_NOT_FOUND)
+                        ?: throw LuminaBadRequestException(USER_NOT_FOUND)
                     Users.update({ Users.userId eq userRow[Users.userId] }) {
                         it[isSoterEnabled] = when (request.action) {
                             SoterAction.ENABLE -> true

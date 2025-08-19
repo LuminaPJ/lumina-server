@@ -3,7 +3,6 @@ package org.lumina.routes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -24,6 +23,9 @@ import org.lumina.models.*
 import org.lumina.routes.ApprovalAction.APPROVE
 import org.lumina.routes.ApprovalAction.REJECT
 import org.lumina.routes.ApprovalAction.WITHDRAW
+import org.lumina.utils.LuminaBadRequestException
+import org.lumina.utils.LuminaIllegalArgumentException
+import org.lumina.utils.LuminaIllegalStateException
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
 import java.time.LocalDateTime
@@ -64,12 +66,12 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                     val approvalId = try {
                         approvalIdString.toLong()
                     } catch (_: NumberFormatException) {
-                        throw BadRequestException(INVALID_APPROVAL_ID)
+                        throw LuminaBadRequestException(INVALID_APPROVAL_ID)
                     }
                     val approvalInfo = transaction {
                         val approvalRow =
                             Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_APPROVAL_ID)
+                                ?: throw LuminaBadRequestException(INVALID_APPROVAL_ID)
                         val approvalType = approvalRow[Approvals.approvalType]
                         when (approvalType) {
                             ApprovalTargetType.TASK_CREATION -> {
@@ -92,7 +94,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
                 val approvalInfoList = transaction {
-                    // val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw IllegalArgumentException(INVALID_JWT)
+                    // val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaIllegalArgumentException(INVALID_JWT)
                     val approvalInfoList = mutableListOf<ApprovalInfo>()
 
                     val joinGroupApprovalInfoRows = JoinGroupApprovals.selectAll()
@@ -118,7 +120,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                         )
                     val approvalInfoList = transaction {
                         val userId =
-                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw IllegalArgumentException(INVALID_JWT)
+                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaIllegalArgumentException(INVALID_JWT)
                         val managingGroupIdList = UserGroups.selectAll()
                             .where { (UserGroups.userId eq userId) and ((UserGroups.permission eq UserRole.SUPER_ADMIN) or (UserGroups.permission eq UserRole.ADMIN)) }
                             .map { it[UserGroups.groupId] }
@@ -196,7 +198,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                 }
                 val actionRequest = call.receive<ApprovalActionRequest>().normalized()
                 val action = requireNotNull(actionRequest.action) { "操作不能为空" }
-                if (action != WITHDRAW) throw IllegalArgumentException("用户端操作出错")
+                if (action != WITHDRAW) throw LuminaIllegalArgumentException("用户端操作出错")
 
                 protectedRoute(
                     weixinOpenId,
@@ -210,9 +212,11 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                     transaction {
                         val approvalRow =
                             Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                ?: throw IllegalArgumentException(INVALID_APPROVAL_ID)
+                                ?: throw LuminaIllegalArgumentException(INVALID_APPROVAL_ID)
                         val approvalType = approvalRow[Approvals.approvalType]
-                        if (actionRequest.approvalType != approvalType.toString()) throw IllegalArgumentException("用户端传递的审批类型与实际审批类型不匹配")
+                        if (actionRequest.approvalType != approvalType.toString()) throw LuminaIllegalArgumentException(
+                            "用户端传递的审批类型与实际审批类型不匹配"
+                        )
                         Approvals.update({ Approvals.approvalId eq approvalId }) {
                             it[status] = ApprovalStatus.WITHDRAWN
                         }
@@ -261,11 +265,13 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                     transaction {
                         val approvalRow =
                             Approvals.selectAll().where { Approvals.approvalId eq approvalId }.firstOrNull()
-                                ?: throw IllegalArgumentException(INVALID_APPROVAL_ID)
+                                ?: throw LuminaIllegalArgumentException(INVALID_APPROVAL_ID)
                         val approvalType = approvalRow[Approvals.approvalType]
-                        if (actionRequest.approvalType != approvalType.toString()) throw IllegalArgumentException("用户端传递的审批类型与实际审批类型不匹配")
+                        if (actionRequest.approvalType != approvalType.toString()) throw LuminaIllegalArgumentException(
+                            "用户端传递的审批类型与实际审批类型不匹配"
+                        )
                         val adminUserId =
-                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw IllegalStateException("服务端错误")
+                            weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaIllegalStateException("服务端错误")
                         when (approvalType) {
                             ApprovalTargetType.TASK_CREATION -> {
                                 TODO()
@@ -274,7 +280,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                             ApprovalTargetType.GROUP_JOIN -> {
                                 val joinGroupApprovalRow =
                                     JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approvalId }
-                                        .firstOrNull() ?: throw IllegalStateException("服务端错误")
+                                        .firstOrNull() ?: throw LuminaIllegalStateException("服务端错误")
                                 when (actionRequest.action) {
                                     APPROVE -> {
                                         val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
@@ -290,7 +296,7 @@ fun Route.approvalRoute(appId: String, appSecret: String) {
                                             it[this.userId] = requesterUserId
                                             it[this.weixinOpenId] = requesterWeixinOpenId
                                             it[this.userName] = requesterUserName
-                                        } else if (requesterUserRow[Users.userId] != requesterUserId) throw IllegalStateException(
+                                        } else if (requesterUserRow[Users.userId] != requesterUserId) throw LuminaIllegalStateException(
                                             "服务端错误"
                                         )
                                         UserGroups.insert {
@@ -400,7 +406,7 @@ fun Transaction.buildApprovalInfo(approvalRow: ResultRow, type: ApprovalTargetTy
 
         ApprovalTargetType.GROUP_JOIN -> {
             Approvals.selectAll().where { Approvals.approvalId eq approvalRow[JoinGroupApprovals.approvalId] }
-                .firstOrNull() ?: throw IllegalStateException("服务端错误")
+                .firstOrNull() ?: throw LuminaIllegalStateException("服务端错误")
         }
     }
     return ApprovalInfo(
@@ -423,7 +429,7 @@ fun Transaction.buildApprovalInfo(approvalRow: ResultRow, type: ApprovalTargetTy
 fun Transaction.buildJoinGroupApprovalInfo(approvalId: Long, approvalRow: ResultRow): JoinGroupApprovalInfo {
     val joinGroupApprovalRow =
         JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approvalId }.firstOrNull()
-            ?: throw IllegalStateException("服务端错误")
+            ?: throw LuminaIllegalStateException("服务端错误")
     val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
     val targetGroupName =
         Groups.selectAll().where { Groups.groupId eq targetGroupId }.firstOrNull()?.get(Groups.groupName)

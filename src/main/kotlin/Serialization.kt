@@ -4,14 +4,12 @@ import io.ktor.client.plugins.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.auth.*
-import io.ktor.server.plugins.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import javax.security.sasl.AuthenticationException
+import org.lumina.utils.*
 
 fun Application.configureSerialization() {
     val environment = environment.config.property("ktor.environment").getString()
@@ -39,7 +37,7 @@ fun Application.configureSerialization() {
                 }
 
                 val message = when (cause) {
-                    is ResponseException, is AuthenticationException, is BadRequestException, is OAuth1aException, is IllegalStateException, is IllegalArgumentException -> cause.message
+                    is LuminaNotFoundException, is LuminaBadRequestException, is LuminaIllegalStateException, is LuminaIllegalArgumentException, is LuminaAuthenticationException -> cause.message
                     else -> "服务端错误"
                 }
 

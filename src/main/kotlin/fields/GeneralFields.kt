@@ -5,6 +5,7 @@ object GeneralFields {
 }
 
 object ReturnInvalidReasonFields {
+    const val INVALID_WEIXIN_OPEN_ID = "无效的微信 Open ID"
     const val INVALID_USER_ID = "无效的用户 ID"
     const val INVALID_GROUP_ID = "无效的团体 ID"
     const val INVALID_TASK_ID = "无效的任务 ID"

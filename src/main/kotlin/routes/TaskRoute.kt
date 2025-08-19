@@ -3,7 +3,6 @@ package org.lumina.routes
 import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -24,12 +23,15 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_GROUP_ID
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_JWT
 import org.lumina.fields.ReturnInvalidReasonFields.INVALID_TASK_ID
+import org.lumina.fields.ReturnInvalidReasonFields.UNSAFE_CONTENT
 import org.lumina.models.Groups
 import org.lumina.models.UserGroups
 import org.lumina.models.Users
 import org.lumina.models.task.*
 import org.lumina.models.weixinOpenId2UserIdOrNull
 import org.lumina.routes.TaskStatus.*
+import org.lumina.utils.LuminaBadRequestException
+import org.lumina.utils.LuminaIllegalStateException
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
 import org.lumina.utils.sm3
@@ -46,7 +48,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         HttpStatusCode.Unauthorized, INVALID_JWT
                     )
                 val taskList: List<TaskInfo> = transaction {
-                    val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                    val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                     val userGroupList = UserGroups.selectAll().where { UserGroups.userId eq userId }
                     if (userGroupList.toList().isEmpty()) return@transaction emptyList()
                     val taskMutableList = mutableListOf<TaskInfo>()
@@ -57,7 +59,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                             val taskId = task[Tasks.taskId]
                             val creatorRow =
                                 Users.selectAll().where { Users.userId eq task[Tasks.creator] }.firstOrNull()
-                                    ?: throw IllegalStateException("服务端错误")
+                                    ?: throw LuminaIllegalStateException("服务端错误")
                             val creatorName = creatorRow[Users.userName]
                             val taskStatus = getTaskStatus(task, taskId, userId)
                             taskMutableList.add(
@@ -129,16 +131,16 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                     )
                 )
                 if (!isContentSafety) return@post call.respond(
-                    HttpStatusCode.BadRequest, "您提交的内容被微信判定为存在违规内容，请修改后再次提交"
+                    HttpStatusCode.BadRequest, UNSAFE_CONTENT
                 )
 
                 protectedRoute(
                     weixinOpenId, groupId, SUPERADMIN_ADMIN_SET, CheckType.GROUP_ID, "创建任务", true, request.soterInfo
                 ) {
                     transaction {
-                        val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                        val userId = weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                         Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
-                            ?: throw BadRequestException(INVALID_GROUP_ID)
+                            ?: throw LuminaBadRequestException(INVALID_GROUP_ID)
                         val taskId = Tasks.insert {
                             it[this.groupId] = groupId
                             it[this.taskName] = taskName
@@ -152,7 +154,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
 
                         when (taskType) {
                             TaskType.CHECK_IN -> {
-                                if (request.checkInType == null) throw BadRequestException("请完善签到配置")
+                                if (request.checkInType == null) throw LuminaBadRequestException("请完善签到配置")
                                 CheckInTaskInfoTable.insert {
                                     it[this.taskId] = taskId
                                     it[this.checkInType] = request.checkInType
@@ -162,9 +164,9 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                             }
 
                             TaskType.VOTE -> {
-                                if (request.voteTaskOption == null) throw BadRequestException("请完善投票配置")
+                                if (request.voteTaskOption == null) throw LuminaBadRequestException("请完善投票配置")
                                 val optionNames = request.voteTaskOption.map { it.optionName }
-                                if (optionNames.size != optionNames.distinct().size) throw BadRequestException("投票选项名称不能重复")
+                                if (optionNames.size != optionNames.distinct().size) throw LuminaBadRequestException("投票选项名称不能重复")
 
                                 VoteTaskInfoTable.insert {
                                     it[this.taskId] = taskId
@@ -218,16 +220,16 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         val taskId = try {
                             taskIdString.toLong()
                         } catch (_: NumberFormatException) {
-                            throw BadRequestException(INVALID_TASK_ID)
+                            throw LuminaBadRequestException(INVALID_TASK_ID)
                         }
                         val taskInfo = transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_TASK_ID)
+                                ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val checkInTaskRow =
                                 CheckInTaskInfoTable.selectAll().where { CheckInTaskInfoTable.taskId eq taskId }
-                                    .firstOrNull() ?: throw BadRequestException(INVALID_TASK_ID)
+                                    .firstOrNull() ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val groupId = taskRow[Tasks.groupId]
                             val groupName = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
                                 ?.get(Groups.groupName)
@@ -273,23 +275,23 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         val taskId = try {
                             taskIdString.toLong()
                         } catch (_: NumberFormatException) {
-                            throw BadRequestException(INVALID_TASK_ID)
+                            throw LuminaBadRequestException(INVALID_TASK_ID)
                         }
                         transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_TASK_ID)
+                                ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val checkInTaskRow =
                                 CheckInTaskInfoTable.selectAll().where { CheckInTaskInfoTable.taskId eq taskId }
-                                    .firstOrNull() ?: throw BadRequestException(INVALID_TASK_ID)
+                                    .firstOrNull() ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val taskStatus = getTaskStatus(taskRow, taskId, userId)
                             when (taskStatus) {
-                                NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
-                                PARTICIPATED -> throw BadRequestException("您已参与此任务")
-                                EXPIRED -> throw BadRequestException("任务已过期")
-                                MARK_AS_NOT_PARTICIPANT -> throw BadRequestException("您已被任务创建者标记为未参与，如有需要，请与任务创建者联系")
-                                MARK_AS_PENDING -> throw BadRequestException("您已被任务创建者暂缓处理，请尽快与任务创建者取得联系")
+                                NOT_REQUIRED -> throw LuminaBadRequestException("您无需参与此任务")
+                                PARTICIPATED -> throw LuminaBadRequestException("您已参与此任务")
+                                EXPIRED -> throw LuminaBadRequestException("任务已过期")
+                                MARK_AS_NOT_PARTICIPANT -> throw LuminaBadRequestException("您已被任务创建者标记为未参与，如有需要，请与任务创建者联系")
+                                MARK_AS_PENDING -> throw LuminaBadRequestException("您已被任务创建者暂缓处理，请尽快与任务创建者取得联系")
 
                                 PENDING, MARK_AS_PARTICIPANT -> {
                                     val checkInTaskType = checkInTaskRow[CheckInTaskInfoTable.checkInType]
@@ -297,7 +299,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                         CheckInType.TOKEN -> {
                                             val checkInTokenSM3 = checkInTaskRow[CheckInTaskInfoTable.checkInTokenSM3]
                                             val checkInTokenSM3FromUser = request.checkInToken?.sm3()
-                                            if (checkInTokenSM3FromUser == null || checkInTokenSM3FromUser != checkInTokenSM3) throw BadRequestException(
+                                            if (checkInTokenSM3FromUser == null || checkInTokenSM3FromUser != checkInTokenSM3) throw LuminaBadRequestException(
                                                 "签到验证码错误"
                                             )
                                         }
@@ -339,16 +341,16 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         val taskId = try {
                             taskIdString.toLong()
                         } catch (_: NumberFormatException) {
-                            throw BadRequestException(INVALID_TASK_ID)
+                            throw LuminaBadRequestException(INVALID_TASK_ID)
                         }
                         val voteTaskInfo = transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_TASK_ID)
+                                ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val voteTaskRow =
                                 VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
-                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                                    ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val groupId = taskRow[Tasks.groupId]
                             val groupName = Groups.selectAll().where { Groups.groupId eq groupId }.firstOrNull()
                                 ?.get(Groups.groupName)
@@ -453,32 +455,32 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         val taskId = try {
                             taskIdString.toLong()
                         } catch (_: NumberFormatException) {
-                            throw BadRequestException(INVALID_TASK_ID)
+                            throw LuminaBadRequestException(INVALID_TASK_ID)
                         }
                         transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_TASK_ID)
+                                ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val voteTaskRow =
                                 VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
-                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                                    ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val taskStatus = getTaskStatus(taskRow, taskId, userId)
                             when (taskStatus) {
-                                NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
-                                PARTICIPATED -> throw BadRequestException("您已参与此任务")
-                                EXPIRED -> throw BadRequestException("任务已过期")
+                                NOT_REQUIRED -> throw LuminaBadRequestException("您无需参与此任务")
+                                PARTICIPATED -> throw LuminaBadRequestException("您已参与此任务")
+                                EXPIRED -> throw LuminaBadRequestException("任务已过期")
                                 PENDING -> {
                                     // 验证用户提交的选项是否有效
                                     val maxSelectable = voteTaskRow[VoteTaskInfoTable.maxSelectable]
-                                    if (request.voteOptions.isEmpty()) throw BadRequestException("请至少选择一个选项")
-                                    if (request.voteOptions.size > maxSelectable) throw BadRequestException("最多只能选择 $maxSelectable 个选项")
+                                    if (request.voteOptions.isEmpty()) throw LuminaBadRequestException("请至少选择一个选项")
+                                    if (request.voteOptions.size > maxSelectable) throw LuminaBadRequestException("最多只能选择 $maxSelectable 个选项")
                                     val validOptions = VoteTaskOptionTable.selectAll().where {
                                         VoteTaskOptionTable.taskId eq taskId
                                     }.associateBy { it[VoteTaskOptionTable.optionName] }
                                     val selectedOptionIds = request.voteOptions.map { optionName ->
                                         validOptions[optionName]?.get(VoteTaskOptionTable.optionId)
-                                            ?: throw BadRequestException("存在无效的投票选项：$optionName")
+                                            ?: throw LuminaBadRequestException("存在无效的投票选项：$optionName")
                                     }
 
                                     selectedOptionIds.forEach { optionId ->
@@ -495,7 +497,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                     }
                                 }
 
-                                else -> throw BadRequestException("服务端错误")
+                                else -> throw LuminaBadRequestException("服务端错误")
                             }
                         }
                         call.respond(HttpStatusCode.OK)
@@ -524,23 +526,23 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                         val taskId = try {
                             taskIdString.toLong()
                         } catch (_: NumberFormatException) {
-                            throw BadRequestException(INVALID_TASK_ID)
+                            throw LuminaBadRequestException(INVALID_TASK_ID)
                         }
                         transaction {
                             val userId =
-                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw BadRequestException(INVALID_JWT)
+                                weixinOpenId2UserIdOrNull(weixinOpenId) ?: throw LuminaBadRequestException(INVALID_JWT)
                             val taskRow = Tasks.selectAll().where { Tasks.taskId eq taskId }.firstOrNull()
-                                ?: throw BadRequestException(INVALID_TASK_ID)
+                                ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val voteTaskRow =
                                 VoteTaskInfoTable.selectAll().where { VoteTaskInfoTable.taskId eq taskId }.firstOrNull()
-                                    ?: throw BadRequestException(INVALID_TASK_ID)
+                                    ?: throw LuminaBadRequestException(INVALID_TASK_ID)
                             val taskStatus = getTaskStatus(taskRow, taskId, userId)
                             when (taskStatus) {
-                                NOT_REQUIRED -> throw BadRequestException("您无需参与此任务")
-                                EXPIRED -> throw BadRequestException("任务已结束，无法撤回")
-                                PENDING -> throw BadRequestException("您尚未参与此任务，因此无需撤回")
+                                NOT_REQUIRED -> throw LuminaBadRequestException("您无需参与此任务")
+                                EXPIRED -> throw LuminaBadRequestException("任务已结束，无法撤回")
+                                PENDING -> throw LuminaBadRequestException("您尚未参与此任务，因此无需撤回")
                                 PARTICIPATED -> {
-                                    if (!voteTaskRow[VoteTaskInfoTable.canRecall]) throw BadRequestException("该投票任务不允许撤回")
+                                    if (!voteTaskRow[VoteTaskInfoTable.canRecall]) throw LuminaBadRequestException("该投票任务不允许撤回")
                                     VoteTaskParticipationRecord.deleteWhere {
                                         (VoteTaskParticipationRecord.taskId eq taskId) and (VoteTaskParticipationRecord.userId eq userId)
                                     }
@@ -549,7 +551,7 @@ fun Route.taskRoute(appId: String, appSecret: String) {
                                     }
                                 }
 
-                                else -> throw BadRequestException("服务端错误")
+                                else -> throw LuminaBadRequestException("服务端错误")
                             }
                         }
                         call.respond(HttpStatusCode.OK)

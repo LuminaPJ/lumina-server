@@ -1,6 +1,5 @@
 package org.lumina.utils.security
 
-import io.ktor.server.plugins.*
 import io.ktor.server.routing.*
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
@@ -8,6 +7,7 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.experimental.newSuspendedTransaction
 import org.lumina.models.*
 import org.lumina.models.task.Tasks
+import org.lumina.utils.LuminaNotFoundException
 import org.lumina.utils.getUserIdByWeixinOpenIdOrNullFromDB
 import org.lumina.utils.security.CheckType.*
 import org.lumina.utils.security.RuntimePermission.*
@@ -177,12 +177,12 @@ fun Transaction.protectedRouteWithApproveId(
     weixinOpenId: String, userId: String, approveId: Long, permissions: Set<RuntimePermission>
 ): Boolean {
     val approveRow = Approvals.selectAll().where { Approvals.approvalId eq approveId }.firstOrNull()
-        ?: throw NotFoundException("审批不存在")
+        ?: throw LuminaNotFoundException("审批不存在")
     return when (approveRow[Approvals.approvalType]) {
         ApprovalTargetType.GROUP_JOIN -> {
             val joinGroupApprovalRow =
                 JoinGroupApprovals.selectAll().where { JoinGroupApprovals.approvalId eq approveId }.firstOrNull()
-                    ?: throw NotFoundException("审批不存在")
+                    ?: throw LuminaNotFoundException("审批不存在")
             val requesterWeixinOpenId = joinGroupApprovalRow[JoinGroupApprovals.requesterWeixinOpenId]
             val targetGroupId = joinGroupApprovalRow[JoinGroupApprovals.targetGroupId]
             if (permissions.contains(SELF)) requesterWeixinOpenId == weixinOpenId || protectedRouteWithGroupId(
