@@ -3,8 +3,8 @@ val h2_version = "2.3.232"
 val kotlin_version="2.2.10"
 val logback_version="1.5.18"
 val postgres_version="42.7.7"
-val kona_sm_version = "1.0.18"
-val tika_version = "3.2.2"
+val kona_sm_version="1.0.18"
+val tika_version="3.2.2"
 
 plugins {
     kotlin("jvm") version "2.2.10"
