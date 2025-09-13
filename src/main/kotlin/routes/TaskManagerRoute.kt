@@ -125,7 +125,7 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                 }
 
                                 val participatedAt = participationRecord?.get(TaskParticipationRecord.participatedAt)
-                                        ?.toKotlinLocalDateTime()
+                                    ?.toKotlinLocalDateTime()
 
                                 CheckInTaskUserStatusInfo(
                                     userId = userId,
@@ -332,10 +332,8 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                     userId = userId, userName = userName, votedAt = participatedAt
                                 )
 
-                                if (!optionIdToVoteParticipantsMap.containsKey(optionId)) {
-                                    optionIdToVoteParticipantsMap[optionId] = mutableListOf()
-                                }
-                                optionIdToVoteParticipantsMap[optionId]?.add(participantInfo)
+                                optionIdToVoteParticipantsMap.getOrPut(optionId) { mutableListOf() }
+                                    .add(participantInfo)
                             }
 
                             val voteTaskOptions = voteOptions.map {
