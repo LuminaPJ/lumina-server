@@ -86,7 +86,15 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                 UserGroups.groupId eq groupId
                             }.toList()
 
-                            val userNameMap = Users.selectAll().toList().associateBy { it[Users.userId] }
+                            val allUserIds = buildSet {
+                                add(creatorId)
+                                addAll(groupMembers.map { it[UserGroups.userId] })
+                                addAll(participationRecords.map { it[TaskParticipationRecord.userId] })
+                                addAll(interventionRecords.map { it[CheckInTaskCreatorInterventionRecord.userId] })
+                            }
+
+                            val userNameMap = Users.selectAll().where { Users.userId inList allUserIds }
+                                .associateBy { it[Users.userId] }
                             val userIdToParticipationRecordMap =
                                 participationRecords.associateBy { it[TaskParticipationRecord.userId] }
                             val userIdToInterventionRecordMap =
