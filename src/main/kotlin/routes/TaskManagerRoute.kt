@@ -23,6 +23,7 @@ import org.lumina.models.task.*
 import org.lumina.models.task.InterventionType.MARK_AS_PARTICIPANT
 import org.lumina.models.weixinOpenId2UserIdOrNull
 import org.lumina.utils.LuminaBadRequestException
+import org.lumina.utils.LuminaIllegalStateException
 import org.lumina.utils.normalized
 import org.lumina.utils.security.*
 import java.time.LocalDateTime
@@ -107,9 +108,10 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                     }
                                 }
 
+                                val participationRecord = userIdToParticipationRecordMap[userId]
+
                                 val status = if (!isUserInTask) TaskStatus.NOT_REQUIRED else {
                                     val interventionRecord = userIdToInterventionRecordMap[userId]
-                                    val participationRecord = userIdToParticipationRecordMap[userId]
                                     val isExpired = taskRow[Tasks.endTime].isBefore(LocalDateTime.now())
                                     when (interventionRecord?.get(CheckInTaskCreatorInterventionRecord.interventionType)) {
                                         InterventionType.MARK_AS_NOT_PARTICIPANT -> TaskStatus.MARK_AS_NOT_PARTICIPANT
@@ -122,8 +124,7 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                     }
                                 }
 
-                                val participatedAt =
-                                    userIdToParticipationRecordMap[userId]?.get(TaskParticipationRecord.participatedAt)
+                                val participatedAt = participationRecord?.get(TaskParticipationRecord.participatedAt)
                                         ?.toKotlinLocalDateTime()
 
                                 CheckInTaskUserStatusInfo(
@@ -325,7 +326,7 @@ fun Route.taskManagerRoute(appId: String, appSecret: String) {
                                 val userName = userNameMap[userId]?.get(Users.userName)
                                 val participatedAt =
                                     userIdToParticipationRecordMap[userId]?.get(TaskParticipationRecord.participatedAt)
-                                        ?.toKotlinLocalDateTime() ?: LocalDateTime.now().toKotlinLocalDateTime()
+                                        ?.toKotlinLocalDateTime() ?: throw LuminaIllegalStateException("服务端错误")
 
                                 val participantInfo = VoteTaskParticipantInfo(
                                     userId = userId, userName = userName, votedAt = participatedAt
