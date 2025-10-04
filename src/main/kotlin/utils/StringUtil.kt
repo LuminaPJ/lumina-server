@@ -1,51 +1,44 @@
+/**
+ * Copyright (c) 2025 LuminaPJ
+ * SM2 Key Generator is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
 package org.lumina.utils
 
 import java.security.MessageDigest
-import kotlin.reflect.full.memberProperties
-import kotlin.reflect.jvm.isAccessible
 
 /**
  * 将用户提交的对象中所有字符串 `trim()` 化
  */
 fun <T : Any> T.normalized(): T {
-    val obj = this
-    val kClass = obj::class
-
-    if (obj is Map<*, *>) {
-        return obj.mapValues { (_, value) ->
+    return when (this) {
+        is String -> this.trim() as T
+        is Map<*, *> -> this.mapValues { (_, value) ->
             when (value) {
                 is String -> value.trim()
                 is Map<*, *> -> value.normalized()
                 is List<*> -> value.normalized()
                 else -> value
             }
-        } as? T ?: throw LuminaIllegalArgumentException("服务端错误")
-    }
+        } as T
 
-    if (obj is List<*>) {
-        return obj.map { item ->
+        is List<*> -> this.map { item ->
             when (item) {
                 is String -> item.trim()
                 is Map<*, *> -> item.normalized()
                 is List<*> -> item.normalized()
                 else -> item
             }
-        } as? T ?: throw LuminaIllegalArgumentException("服务端错误")
-    }
+        } as T
 
-    kClass.memberProperties.forEach { property ->
-        property.isAccessible = true
-        if (property is kotlin.reflect.KMutableProperty<*>) {
-            val value = property.getter.call(obj)
-            if (value is String) {
-                property.setter.call(obj, value.trim())
-            } else if (value is Map<*, *> || value is List<*>) {
-                property.setter.call(obj, value.normalized())
-            }
-        }
+        else -> this
     }
-
-    return obj
 }
 
 /**
@@ -89,4 +82,49 @@ fun String.base64KeyToHex(): String {
         }
     }.toString().lowercase()
 }
+
+/**
+ * 移除或替换文件名中的非法字符
+ */
+fun String.sanitizeFilename(): String {
+    return this.replace(Regex("[<>:\"/\\\\|?*]"), "_").replace(Regex("\\s+"), " ") // 将多个空格替换为单个空格
+        .trim().takeIf { it.isNotEmpty() } ?: "task"
+}
+
+/**
+ * 语义化签到任务状态
+ */
+fun String.semanticsCheckInTaskStatus(): String = when (this) {
+    "MARK_AS_PARTICIPANT" -> "标记为已参与"
+    "MARK_AS_NOT_PARTICIPANT" -> "标记为未参与"
+    "MARK_AS_PENDING" -> "标记为待定"
+    "PENDING" -> "待参与"
+    "STARTED" -> "进行中"
+    "PARTICIPATED" -> "已参与"
+    "NOT_REQUIRED" -> "无需参与"
+    "EXPIRED" -> "已过期"
+    else -> ""
+}
+
+/**
+ * 语义化任务状态
+ */
+fun String.semanticsTaskStatus(): String = when (this) {
+    "PENDING" -> "待参与"
+    "STARTED" -> "进行中"
+    "PARTICIPATED" -> "已参与"
+    "NOT_REQUIRED" -> "无需参与"
+    "EXPIRED" -> "已过期"
+    else -> ""
+}
+
+/**
+ * 语义化签到任务类型
+ */
+fun String.semanticsCheckInTaskType(): String = when (this) {
+    "TOKEN" -> "验证码签到"
+    "ORDINARY" -> "普通签到"
+    else -> ""
+}
+
 
